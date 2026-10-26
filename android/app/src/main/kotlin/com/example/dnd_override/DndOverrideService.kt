@@ -57,14 +57,48 @@ class DndOverrideService : NotificationListenerService() {
         }
 
         // --- Override actions (reusable for real + test triggers) ---
-        private var ringtone: Ringtone? = null
-        private var isPlaying: Boolean = false
         private val handler = Handler(Looper.getMainLooper())
 
-        fun triggerOverride(ctx: Context) {
+        fun triggerOverride(ctx: Context, soundUri: android.net.Uri? = null) {
             vibrate(ctx)
             wakeScreen(ctx)
-            playRingtone(ctx)
+            playSound(ctx, soundUri)
+        }
+
+        // Resolve the sound to play for a notification: prefer the notification's own
+        // sound (app-specific), then the channel sound (Android 8+), then default.
+        fun resolveSound(ctx: Context, sbn: StatusBarNotification): android.net.Uri? {
+            val n = sbn.notification
+            if (n.sound != null) return n.sound
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val ch = (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                    .getNotificationChannel(n.channelId)
+                if (ch?.sound != null) return ch.sound
+            }
+            return null
+        }
+
+        private fun playSound(ctx: Context, soundUri: android.net.Uri?) {
+            try {
+                var uri = soundUri
+                var r = if (uri != null) RingtoneManager.getRingtone(ctx.applicationContext, uri) else null
+                if (r == null) {
+                    uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                        ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                    r = if (uri != null) RingtoneManager.getRingtone(ctx.applicationContext, uri) else null
+                }
+                try { r?.streamType = AudioManager.STREAM_ALARM } catch (_: Exception) { }
+                try {
+                    val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                    am.setStreamVolume(AudioManager.STREAM_ALARM, max, 0)
+                } catch (_: Exception) { }
+                r?.play()
+                val rr = r
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try { rr?.stop() } catch (_: Exception) { }
+                }, 5000L)
+            } catch (_: Exception) { }
         }
 
         // Play the ringtone sound directly (for testing ringtone hardware).
@@ -107,38 +141,7 @@ class DndOverrideService : NotificationListenerService() {
             } catch (_: Exception) { }
         }
 
-        private fun playRingtone(ctx: Context) {
-            // Avoid reverb: stop any currently playing ringtone before starting a new one.
-            if (isPlaying) {
-                try { ringtone?.stop() } catch (_: Exception) { }
-                handler.removeCallbacksAndMessages(null)
-                ringtone = null
-                isPlaying = false
-            }
-            isPlaying = true
-            try {
-                try { ringtone?.stop() } catch (_: Exception) { }
-                ringtone = null
-                val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-                val r = RingtoneManager.getRingtone(ctx.applicationContext, uri)
-                try { r?.streamType = AudioManager.STREAM_ALARM } catch (_: Exception) { }
-                try {
-                    val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-                    am.setStreamVolume(AudioManager.STREAM_ALARM, max, 0)
-                } catch (_: Exception) { }
-                ringtone = r
-                r?.play()
-                handler.postDelayed({
-                    try { ringtone?.stop() } catch (_: Exception) { }
-                    ringtone = null
-                    isPlaying = false
-                }, 15000L)
-            } catch (_: Exception) {
-                isPlaying = false
-            }
-        }
+
     }
 
     private var lastKey: String? = null
@@ -186,11 +189,12 @@ class DndOverrideService : NotificationListenerService() {
             lastDebugInfo = "NO MATCH: combined=[$combined] keywords=$keywords"
             return
         }
-        lastDebugInfo = "MATCHED: [$matchedKw] combined=[$combined]"
+        val soundUri = resolveSound(this, sbn)
+        lastDebugInfo = "MATCHED: [$matchedKw] sound=${soundUri ?: "default"} combined=[$combined]"
 
         lastKey = sbn.key
         lastTime = now
-        triggerOverride(this)
+        triggerOverride(this, soundUri)
     }
 
     private fun extractText(n: Notification): String {
