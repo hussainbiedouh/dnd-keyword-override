@@ -14,7 +14,7 @@ Built for Xiaomi HyperOS 3, where starred-contact messages are not detected in D
 ## Build
 1. Set `flutter.sdk` and `sdk.dir` in `android/local.properties`:
    ```
-   flutter.sdk=E:\\Apps\\Flutter
+   flutter.sdk=<path-to-your-flutter-sdk>
    sdk.dir=C:\\path\\to\\android-sdk
    ```
 2. `flutter pub get`
