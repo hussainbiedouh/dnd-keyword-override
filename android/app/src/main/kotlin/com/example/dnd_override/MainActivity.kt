@@ -81,7 +81,8 @@ class MainActivity : FlutterActivity() {
                 }
                 "sendTestNotification" -> {
                     val kw = call.argument<String>("keyword")?.trim().orEmpty().ifEmpty { "test" }
-                    result.success(postTestNotification(kw))
+                    val useRingtone = call.argument<Boolean>("ringtone") ?: false
+                    result.success(postTestNotification(kw, useRingtone))
                 }
                 "playTestSound" -> {
                     DndOverrideService.triggerOverride(this)
@@ -110,7 +111,7 @@ class MainActivity : FlutterActivity() {
         return flat.contains("DndOverrideService", ignoreCase = true)
     }
 
-    private fun postTestNotification(keyword: String): Boolean {
+    private fun postTestNotification(keyword: String, useRingtone: Boolean): Boolean {
         return try {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -120,6 +121,7 @@ class MainActivity : FlutterActivity() {
             }
             val extras = Bundle()
             extras.putBoolean("dnd_override_test", true)
+            extras.putBoolean(DndOverrideService.RINGTONE_EXTRA, useRingtone)
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, "dnd_override_test")
             } else {

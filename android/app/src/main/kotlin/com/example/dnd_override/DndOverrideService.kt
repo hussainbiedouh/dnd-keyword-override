@@ -1,6 +1,7 @@
 package com.example.dnd_override
 
 import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.SharedPreferences
@@ -22,6 +23,10 @@ class DndOverrideService : NotificationListenerService() {
         const val PREFS_NAME = "dnd_override_prefs"
         const val KEY_KEYWORDS = "keywords"
         const val TEST_EXTRA = "dnd_override_test"
+        const val RINGTONE_EXTRA = "dnd_override_ringtone"
+        const val PERSISTENT_EXTRA = "dnd_override_persistent"
+        const val STATUS_CHANNEL = "dnd_override_status"
+        const val STATUS_NOTIF_ID = 7001
 
         @Volatile
         private var serviceConnected: Boolean = false
@@ -37,8 +42,10 @@ class DndOverrideService : NotificationListenerService() {
         fun getKeywords(ctx: Context): List<String> =
             prefs(ctx).getStringSet(KEY_KEYWORDS, emptySet())?.toList() ?: emptyList()
 
-        // Normalize Arabic text so dialect/spelling variants are treated as equal:
-        // removes tashkeel, tatweel, normalizes alef/hamza/ya/ta-marbuta.
+        fun setKeywords(ctx: Context, keywords: List<String>) {
+            prefs(ctx).edit().putStringSet(KEY_KEYWORDS, keywords.toSet()).apply()
+        }
+
         fun normalizeArabic(s: String): String {
             var t = s
             t = t.replace(Regex("[\\u064B-\\u065F\\u0670]"), "")
@@ -52,21 +59,6 @@ class DndOverrideService : NotificationListenerService() {
             return t
         }
 
-        fun setKeywords(ctx: Context, keywords: List<String>) {
-            prefs(ctx).edit().putStringSet(KEY_KEYWORDS, keywords.toSet()).apply()
-        }
-
-        // --- Override actions (reusable for real + test triggers) ---
-        private val handler = Handler(Looper.getMainLooper())
-
-        fun triggerOverride(ctx: Context, soundUri: android.net.Uri? = null) {
-            vibrate(ctx)
-            wakeScreen(ctx)
-            playSound(ctx, soundUri)
-        }
-
-        // Resolve the sound to play for a notification: prefer the notification's own
-        // sound (app-specific), then the channel sound (Android 8+), then default.
         fun resolveSound(ctx: Context, sbn: StatusBarNotification): android.net.Uri? {
             val n = sbn.notification
             if (n.sound != null) return n.sound
@@ -76,6 +68,18 @@ class DndOverrideService : NotificationListenerService() {
                 if (ch?.sound != null) return ch.sound
             }
             return null
+        }
+
+        private val handler = Handler(Looper.getMainLooper())
+
+        fun triggerOverride(ctx: Context, soundUri: android.net.Uri? = null, useRingtone: Boolean = false) {
+            vibrate(ctx)
+            wakeScreen(ctx)
+            if (useRingtone) {
+                playRingtoneOnly(ctx)
+            } else {
+                playSound(ctx, soundUri)
+            }
         }
 
         private fun playSound(ctx: Context, soundUri: android.net.Uri?) {
@@ -95,13 +99,12 @@ class DndOverrideService : NotificationListenerService() {
                 } catch (_: Exception) { }
                 r?.play()
                 val rr = r
-                Handler(Looper.getMainLooper()).postDelayed({
+                handler.postDelayed({
                     try { rr?.stop() } catch (_: Exception) { }
                 }, 5000L)
             } catch (_: Exception) { }
         }
 
-        // Play the ringtone sound directly (for testing ringtone hardware).
         fun playRingtoneOnly(ctx: Context) {
             try {
                 val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
@@ -114,7 +117,7 @@ class DndOverrideService : NotificationListenerService() {
                     am.setStreamVolume(AudioManager.STREAM_ALARM, max, 0)
                 } catch (_: Exception) { }
                 r?.play()
-                Handler(Looper.getMainLooper()).postDelayed({ try { r?.stop() } catch (_: Exception) { } }, 10000L)
+                handler.postDelayed({ try { r?.stop() } catch (_: Exception) { } }, 10000L)
             } catch (_: Exception) { }
         }
 
@@ -141,7 +144,41 @@ class DndOverrideService : NotificationListenerService() {
             } catch (_: Exception) { }
         }
 
+        fun createStatusChannel(ctx: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val ch = NotificationChannel(STATUS_CHANNEL, "DnD Override Status", NotificationManager.IMPORTANCE_LOW)
+                ch.description = "Shows when DnD override is active"
+                ch.setShowBadge(false)
+                nm.createNotificationChannel(ch)
+            }
+        }
 
+        fun showPersistentStatus(ctx: Context) {
+            createStatusChannel(ctx)
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(ctx, STATUS_CHANNEL)
+            } else {
+                Notification.Builder(ctx)
+            }
+            val extras = android.os.Bundle()
+            extras.putBoolean(PERSISTENT_EXTRA, true)
+            val n = builder
+                .setContentTitle("DnD Override active")
+                .setContentText("Monitoring notifications for keywords")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setExtras(extras)
+                .build()
+            nm.notify(STATUS_NOTIF_ID, n)
+        }
+
+        fun clearPersistentStatus(ctx: Context) {
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.cancel(STATUS_NOTIF_ID)
+        }
     }
 
     private var lastKey: String? = null
@@ -150,17 +187,35 @@ class DndOverrideService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         serviceConnected = true
+        // If DnD already active, show persistent notification.
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+            showPersistentStatus(this)
+        }
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         serviceConnected = false
+        clearPersistentStatus(this)
+    }
+
+    override fun onInterruptionFilterChanged(interruptionFilter: Int) {
+        super.onInterruptionFilterChanged(interruptionFilter)
+        if (interruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
+            clearPersistentStatus(this)
+        } else {
+            showPersistentStatus(this)
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val isOwn = sbn.packageName == packageName
+        // Skip our persistent status notification and other own notifications that aren't tests.
+        val isPersistent = sbn.notification.extras?.getBoolean(PERSISTENT_EXTRA, false) == true
+        if (isOwn && isPersistent) return
         // For real (non-own) notifications, only act while DnD is active.
         if (!isOwn) {
             if (nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
@@ -168,7 +223,7 @@ class DndOverrideService : NotificationListenerService() {
                 return
             }
         }
-        // Skip incoming calls: let the system handle call ringing (avoids reverb/double ring).
+        // Skip incoming calls.
         if (sbn.notification.category == Notification.CATEGORY_CALL) return
         val pkg = sbn.packageName.lowercase()
         if (!isOwn && (pkg.contains("dialer") || pkg.contains("phone") || pkg.contains("telecom") || pkg.contains("incall"))) return
@@ -179,7 +234,6 @@ class DndOverrideService : NotificationListenerService() {
             return
         }
 
-        // Dedup rapid re-posts.
         val now = System.currentTimeMillis()
         if (sbn.key == lastKey && now - lastTime < 5000L) return
 
@@ -189,12 +243,13 @@ class DndOverrideService : NotificationListenerService() {
             lastDebugInfo = "NO MATCH: combined=[$combined] keywords=$keywords"
             return
         }
+        val useRingtone = sbn.notification.extras?.getBoolean(RINGTONE_EXTRA, false) == true
         val soundUri = resolveSound(this, sbn)
         lastDebugInfo = "MATCHED: [$matchedKw] sound=${soundUri ?: "default"} combined=[$combined]"
 
         lastKey = sbn.key
         lastTime = now
-        triggerOverride(this, soundUri)
+        triggerOverride(this, soundUri, useRingtone)
     }
 
     private fun extractText(n: Notification): String {

@@ -132,13 +132,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _refresh();
   }
 
-  Future<void> _sendTestNotification() async {
+  Future<void> _sendTestNotification({bool ringtone = false}) async {
     await _channel.invokeMethod('requestNotificationPermission');
     final kw = _testInput.text.trim().isEmpty
         ? (_keywords.isNotEmpty ? _keywords.first : 'test')
         : _testInput.text.trim();
     try {
-      final ok = await _channel.invokeMethod<bool>('sendTestNotification', {'keyword': kw});
+      final ok = await _channel.invokeMethod<bool>('sendTestNotification', {'keyword': kw, 'ringtone': ringtone});
       if (!mounted) return;
       // Give the service a moment to process the notification.
       await Future.delayed(const Duration(seconds: 1));
@@ -151,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ? 'Notification access not active. Enable it first (see Setup).'
           : (ok != true
               ? 'Failed to post notification.'
-              : 'Posted "$kw". Service: $debug');
+              : 'Posted "$kw" (${ringtone ? "ringtone" : "notification"} sound). Service: $debug');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 6)));
     } catch (e) {
       if (mounted) {
@@ -160,31 +160,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _playTestSound() async {
-    try {
-      await _channel.invokeMethod('playTestSound');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Playing notification sound/vibrate/wake.')));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-  }
 
-  Future<void> _playTestRingtone() async {
-    try {
-      await _channel.invokeMethod('playTestRingtone');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Playing ringtone/vibrate/wake.')));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -309,27 +285,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: _sendTestNotification,
-              icon: const Icon(Icons.notifications_active),
-              label: const Text('Send test notification'),
-            ),
-            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _playTestSound,
-                    icon: const Icon(Icons.volume_up),
-                    label: const Text('Test notification sound'),
+                  child: ElevatedButton.icon(
+                    onPressed: () => _sendTestNotification(),
+                    icon: const Icon(Icons.notifications_active),
+                    label: const Text('Send test notification'),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _playTestRingtone,
+                    onPressed: () => _sendTestNotification(ringtone: true),
                     icon: const Icon(Icons.ring_volume),
-                    label: const Text('Test ringtone'),
+                    label: const Text('Ringtone test'),
                   ),
                 ),
               ],
