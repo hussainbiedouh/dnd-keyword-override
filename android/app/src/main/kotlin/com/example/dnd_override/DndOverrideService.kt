@@ -147,9 +147,11 @@ class DndOverrideService : NotificationListenerService() {
         fun createStatusChannel(ctx: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                val ch = NotificationChannel(STATUS_CHANNEL, "DnD Override Status", NotificationManager.IMPORTANCE_DEFAULT)
+                val ch = NotificationChannel(STATUS_CHANNEL, "DnD Override Status", NotificationManager.IMPORTANCE_HIGH)
                 ch.description = "Shows when DnD override is active"
                 ch.setShowBadge(false)
+                ch.enableVibration(false)
+                ch.setSound(null, null)
                 nm.createNotificationChannel(ch)
             }
         }
@@ -170,6 +172,8 @@ class DndOverrideService : NotificationListenerService() {
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setOngoing(true)
                 .setAutoCancel(false)
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .setPriority(Notification.PRIORITY_HIGH)
                 .setExtras(extras)
                 .build()
             nm.notify(STATUS_NOTIF_ID, n)
@@ -212,6 +216,12 @@ class DndOverrideService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // Ensure persistent status notification is shown/cleared based on DnD state.
+        if (nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+            showPersistentStatus(this)
+        } else {
+            clearPersistentStatus(this)
+        }
         val isOwn = sbn.packageName == packageName
         // Skip our persistent status notification and other own notifications that aren't tests.
         val isPersistent = sbn.notification.extras?.getBoolean(PERSISTENT_EXTRA, false) == true

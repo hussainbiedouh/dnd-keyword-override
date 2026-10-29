@@ -329,6 +329,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _setupRow('Notification access', _notifAccess, _openNotifSettings),
             _setupRow('Battery optimization ignored', _batteryIgnored, _requestBattery),
             const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await _channel.invokeMethod('showStatusNotification');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Status notification shown. Check notification shade.')));
+                      }
+                    },
+                    child: const Text('Show status notification'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await _channel.invokeMethod('clearStatusNotification');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Status notification cleared.')));
+                      }
+                    },
+                    child: const Text('Clear status notification'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             const Text(
               'Also enable Auto-start and disable battery restrictions for this app in HyperOS Security / Battery settings, '
               'otherwise the service may be killed in background.',
@@ -358,6 +388,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           'When Do Not Disturb is active, this app monitors incoming notifications. '
           'If a notification title or body contains any of your keywords, it overrides DnD '
           'and plays the default notification sound, vibrates, and wakes the screen.\n\n'
+          'When DnD is active, a persistent notification is shown and auto-cleared when DnD is off.'
           'Matching is case-insensitive and uses "contains". '
           'DnD policy access is not required (override plays sound directly).',
           style: TextStyle(fontSize: 13),
