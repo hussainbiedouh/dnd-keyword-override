@@ -176,11 +176,29 @@ class DndOverrideService : NotificationListenerService() {
                 .setPriority(Notification.PRIORITY_HIGH)
                 .setExtras(extras)
                 .build()
-            nm.notify(STATUS_NOTIF_ID, n)
+            // Use startForeground so the notification is exempt from DnD suppression.
+            try {
+                if (ctx is DndOverrideService) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        ctx.startForeground(STATUS_NOTIF_ID, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                    } else {
+                        ctx.startForeground(STATUS_NOTIF_ID, n)
+                    }
+                } else {
+                    nm.notify(STATUS_NOTIF_ID, n)
+                }
+            } catch (e: Exception) {
+                nm.notify(STATUS_NOTIF_ID, n)
+            }
         }
 
         fun clearPersistentStatus(ctx: Context) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            try {
+                if (ctx is DndOverrideService) {
+                    ctx.stopForeground(android.app.Service.STOP_FOREGROUND_REMOVE)
+                }
+            } catch (e: Exception) { }
             nm.cancel(STATUS_NOTIF_ID)
         }
     }
