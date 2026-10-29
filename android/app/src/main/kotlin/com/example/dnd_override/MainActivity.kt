@@ -46,7 +46,7 @@ class MainActivity : FlutterActivity() {
                     DndOverrideService.setKeywords(this, list)
                     result.success(DndOverrideService.getKeywords(this))
                 }
-                "isNotificationAccessGranted" -> result.success(isNotificationAccessGranted())
+                "isNotificationAccessGranted" -> result.success(isNotificationAccessGranted() || DndOverrideService.isServiceConnected())
                 "isServiceConnected" -> result.success(DndOverrideService.isServiceConnected())
                 "getLastDebugInfo" -> result.success(DndOverrideService.lastDebugInfo)
                 "openNotificationAccessSettings" -> {

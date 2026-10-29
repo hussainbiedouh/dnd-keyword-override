@@ -73,18 +73,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } catch (e) {
       errs.add('keywords: $e');
     }
-    try {
-      final na = await _channel.invokeMethod<bool>('isNotificationAccessGranted');
-      setState(() => _notifAccess = na ?? false);
-    } catch (e) {
-      errs.add('notifAccess: $e');
+    // Retry a few times for notification access / service connection, since
+    // on Xiaomi HyperOS the service may take a moment to bind after granting.
+    bool na = false;
+    bool sc = false;
+    for (int i = 0; i < 3; i++) {
+      try {
+        na = await _channel.invokeMethod<bool>('isNotificationAccessGranted') ?? false;
+        sc = await _channel.invokeMethod<bool>('isServiceConnected') ?? false;
+        if (na || sc) break;
+      } catch (e) {
+        errs.add('notifAccess: $e');
+      }
+      if (i < 2) await Future.delayed(const Duration(milliseconds: 500));
     }
-    try {
-      final sc = await _channel.invokeMethod<bool>('isServiceConnected');
-      setState(() => _serviceConnected = sc ?? false);
-    } catch (e) {
-      errs.add('serviceConnected: $e');
-    }
+    setState(() {
+      _notifAccess = na;
+      _serviceConnected = sc;
+    });
 
     try {
       final bi = await _channel.invokeMethod<bool>('isIgnoringBatteryOptimizations');
@@ -201,24 +207,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _statusCard() {
-    final ok = _notifAccess && _serviceConnected;
+    final ok = _notifAccess || _serviceConnected;
     return Card(
       child: ListTile(
         leading: Icon(ok ? Icons.check_circle : Icons.error,
             color: ok ? Colors.green : Colors.red),
         title: Text(ok
-            ? 'Service: CONNECTED'
-            : (_notifAccess ? 'Service: NOT CONNECTED' : 'Notification access: DISABLED')),
+            ? 'Notification access: GRANTED'
+            : 'Notification access: NOT GRANTED'),
         subtitle: Text(ok
-            ? 'Monitoring notifications in DnD.'
-            : (_notifAccess
-                ? 'Access granted but service not bound. Re-enable notification access or restart app.'
-                : 'Grant notification access to start monitoring.')),
+            ? (_serviceConnected
+                ? 'Service connected. Monitoring notifications in DnD.'
+                : 'Access granted. Service binding... tap Refresh.')
+            : 'Grant notification access to start monitoring.'),
         trailing: ok
-            ? null
-            : TextButton(
-                onPressed: _notifAccess ? _refresh : _openNotifSettings,
-                child: Text(_notifAccess ? 'Refresh' : 'Grant')),
+            ? (_serviceConnected
+                ? null
+                : TextButton(onPressed: _refresh, child: const Text('Refresh')))
+            : TextButton(onPressed: _openNotifSettings, child: const Text('Grant')),
       ),
     );
   }
