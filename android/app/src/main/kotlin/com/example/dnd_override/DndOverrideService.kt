@@ -147,7 +147,7 @@ class DndOverrideService : NotificationListenerService() {
         fun createStatusChannel(ctx: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                val ch = NotificationChannel(STATUS_CHANNEL, "DnD Override Status", NotificationManager.IMPORTANCE_LOW)
+                val ch = NotificationChannel(STATUS_CHANNEL, "DnD Override Status", NotificationManager.IMPORTANCE_DEFAULT)
                 ch.description = "Shows when DnD override is active"
                 ch.setShowBadge(false)
                 nm.createNotificationChannel(ch)
