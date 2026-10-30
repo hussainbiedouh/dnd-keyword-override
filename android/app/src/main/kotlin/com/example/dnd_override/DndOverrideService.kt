@@ -157,49 +157,11 @@ class DndOverrideService : NotificationListenerService() {
         }
 
         fun showPersistentStatus(ctx: Context) {
-            createStatusChannel(ctx)
-            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(ctx, STATUS_CHANNEL)
-            } else {
-                Notification.Builder(ctx)
-            }
-            val extras = android.os.Bundle()
-            extras.putBoolean(PERSISTENT_EXTRA, true)
-            val n = builder
-                .setContentTitle("DnD Override active")
-                .setContentText("Monitoring notifications for keywords")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setOngoing(true)
-                .setAutoCancel(false)
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .setPriority(Notification.PRIORITY_HIGH)
-                .setExtras(extras)
-                .build()
-            // Use startForeground so the notification is exempt from DnD suppression.
-            try {
-                if (ctx is DndOverrideService) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        ctx.startForeground(STATUS_NOTIF_ID, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                    } else {
-                        ctx.startForeground(STATUS_NOTIF_ID, n)
-                    }
-                } else {
-                    nm.notify(STATUS_NOTIF_ID, n)
-                }
-            } catch (e: Exception) {
-                nm.notify(STATUS_NOTIF_ID, n)
-            }
+            DndStatusService.start(ctx)
         }
 
         fun clearPersistentStatus(ctx: Context) {
-            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            try {
-                if (ctx is DndOverrideService) {
-                    ctx.stopForeground(android.app.Service.STOP_FOREGROUND_REMOVE)
-                }
-            } catch (e: Exception) { }
-            nm.cancel(STATUS_NOTIF_ID)
+            DndStatusService.stop(ctx)
         }
     }
 
